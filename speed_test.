@@ -1,0 +1,94 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// Define the GPIO pins for the IR sensors
+#define IR_SENSOR1_PIN 12  // GPIO pin connected to the first IR sensor
+#define IR_SENSOR2_PIN 13  // GPIO pin connected to the second IR sensor
+
+// I2C LCD initialization (using custom I2C pins)
+LiquidCrystal_I2C lcd(0x27, 16, 2);  // Set the LCD address to 0x27 for a 16 chars and 2-line display
+
+// Speed thresholds in meters per second
+const float lowSpeedThreshold = 0.3;     // Low speed threshold (m/s)
+const float mediumSpeedThreshold = 0.6;  // Medium speed threshold (m/s)
+const float distanceBetweenSensors = 0.15; // Distance between the two IR sensors in meters (15 cm)
+
+unsigned long sensor1TriggerTime = 0;
+unsigned long sensor2TriggerTime = 0;
+
+bool sensor1Triggered = false;
+bool sensor2Triggered = false;
+
+void setup() {
+  Serial.begin(115200);
+
+  // Initialize IR sensor pins
+  pinMode(IR_SENSOR1_PIN, INPUT);
+  pinMode(IR_SENSOR2_PIN, INPUT);
+
+  // Initialize I2C for ESP32-CAM using custom GPIO pins
+  Wire.begin(14, 15);  // SDA = GPIO 14, SCL = GPIO 15 for I2C
+
+  // Initialize the LCD
+  lcd.init();    // Initialize LCD
+  lcd.backlight();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Speed Monitor");
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  // Check if the first IR sensor is triggered
+  if (digitalRead(IR_SENSOR1_PIN) == LOW && !sensor1Triggered) {
+    sensor1TriggerTime = millis(); // Record the time when the first sensor is triggered
+    sensor1Triggered = true;
+    Serial.println("Car passed the first sensor!");
+  }
+
+  // Check if the second IR sensor is triggered
+  if (digitalRead(IR_SENSOR2_PIN) == LOW && !sensor2Triggered && sensor1Triggered) {
+    sensor2TriggerTime = millis(); // Record the time when the second sensor is triggered
+    sensor2Triggered = true;
+    Serial.println("Car passed the second sensor!");
+
+    // Calculate the time difference in seconds
+    float timeTaken = (sensor2TriggerTime - sensor1TriggerTime) / 1000.0;
+
+    // Calculate speed in meters per second
+    float speed = distanceBetweenSensors / timeTaken;
+
+    // Classify the speed and display it
+    classifyAndDisplaySpeed(speed);
+
+    // Reset for the next measurement
+    sensor1Triggered = false;
+    sensor2Triggered = false;
+  }
+
+  delay(10);  // Small delay to avoid excessive CPU usage
+}
+
+// Function to classify the speed and display on LCD
+void classifyAndDisplaySpeed(float speed) {
+  lcd.clear(); // Clear the LCD for new data
+  lcd.setCursor(0, 0);  // Set cursor to the top row
+  
+  if (speed < lowSpeedThreshold) {
+    Serial.println("Speed: Low");
+    lcd.print("Speed: Low");
+  } else if (speed < mediumSpeedThreshold) {
+    Serial.println("Speed: Medium");
+    lcd.print("Speed: Medium");
+  } else {
+    Serial.println("Speed: High");
+    lcd.print("Speed: High");
+  }
+
+  // Print the actual speed on the second line of the LCD
+  lcd.setCursor(0, 1);
+  lcd.print("Speed: ");
+  lcd.print(speed, 2);  // Display speed with two decimal places
+  lcd.print(" m/s");
+}
